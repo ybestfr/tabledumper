@@ -1,0 +1,357 @@
+local indent = 4
+local game = game
+local workspace = workspace
+local table = table
+local math = math
+local task = task
+local debug = debug
+local coroutine = coroutine
+local string = string
+local Color3 = Color3
+local Instance = Instance
+local syn = syn 
+local oth = syn and syn.oth
+
+local unhook = oth and oth.unhook
+local hook = oth and oth.hook
+local lower = string.lower
+local byte = string.byte
+local round = math.round
+local running = coroutine.running
+local resume = coroutine.resume
+local status = coroutine.status
+local yield = coroutine.yield
+local create = coroutine.create
+local close = coroutine.close
+local info = debug.info
+local lp = game.Players.LocalPlayer
+
+local IsA = game.IsA
+local tostring = tostring
+local tonumber = tonumber
+local delay = task.delay
+local spawn = task.spawn
+local clear = table.clear
+local clone = table.clone
+local function Safetostring(userdata)
+	if type(userdata) == "table" or typeof(userdata) == "userdata" then
+		local rawmetatable = getrawmetatable(userdata)
+		local cachedstring = rawmetatable and rawget(rawmetatable, "__tostring")
+
+		if cachedstring then
+			rawset(rawmetatable, "__tostring", nil)
+			local safestring = tostring(userdata)
+			rawset(rawmetatable, "__tostring", cachedstring)
+			return safestring
+		end
+	end
+	return tostring(userdata)
+end
+local number_table = {
+    ["inf"] = "math.huge",
+    ["-inf"] = "-math.huge",
+    ["nan"] = "0/0"
+}
+local function Create(instance, properties, children)
+    local obj = Instance.new(instance)
+
+    for i, v in next, properties or {} do
+        obj[i] = v
+        for _, child in next, children or {} do
+            child.Parent = obj;
+        end
+    end
+    return obj;
+end
+local specialstrings = {
+    ["\n"] = function(thread,index)
+        resume(thread,index,"\\n")
+    end,
+    ["\t"] = function(thread,index)
+        resume(thread,index,"\\t")
+    end,
+    ["\\"] = function(thread,index)
+        resume(thread,index,"\\\\")
+    end,
+    ['"'] = function(thread,index)
+        resume(thread,index,"\\\"")
+    end
+}
+local function isFinished(coroutines: table)
+    for _, v in next, coroutines do
+        if status(v) == "running" then
+            return false
+        end
+    end
+    return true
+end
+function handlespecials(s, indentation)
+    local i = 0
+    local n = 1
+    local coroutines = {}
+    local coroutineFunc = function(i, r)
+        s = s:sub(0, i - 1) .. r .. s:sub(i + 1, -1)
+    end
+    local timeout = 0
+    repeat
+        i += 1
+        if timeout >= 10 then
+            task.wait()
+            timeout = 0
+        end
+        local char = s:sub(i, i)
+
+        if byte(char) then
+            timeout += 1
+            local c = create(coroutineFunc)
+            table.insert(coroutines, c)
+            local specialfunc = specialstrings[char]
+
+            if specialfunc then
+                specialfunc(c,i)
+                i += 1
+            elseif byte(char) > 126 or byte(char) < 32 then
+                resume(c, i, "\\" .. byte(char))
+                -- s = s:sub(0, i - 1) .. "\\" .. byte(char) .. s:sub(i + 1, -1)
+                i += #Safetostring(byte(char))
+            end
+            if i >= n * 100 then
+                local extra = string.format('" ..\n%s"', string.rep(" ", indentation + indent))
+                s = s:sub(0, i) .. extra .. s:sub(i + 1, -1)
+                i += #extra
+                n += 1
+            end
+        end
+    until char == "" or i > (getgenv().SimpleSpyMaxStringSize or 10000)
+    while not isFinished(coroutines) do
+        game:GetSerivce("RunService").Heartbeat:Wait()
+    end
+    clear(coroutines)
+    if i > (getgenv().SimpleSpyMaxStringSize or 10000) then
+        s = string.sub(s, 0, getgenv().SimpleSpyMaxStringSize or 10000)
+        return s, true
+    end
+    return s, false
+end
+function formatstr(s, indentation)
+    if not indentation then
+        indentation = 0
+    end
+    local handled, reachedMax = handlespecials(s, indentation)
+    return '"' .. handled .. '"' .. (reachedMax and " --[[ MAXIMUM STRING SIZE REACHED, CHANGE 'getgenv().SimpleSpyMaxStringSize' TO ADJUST MAXIMUM SIZE ]]" or "")
+end
+function getplayer(instance)
+    for _, v in next, game.Players:GetPlayers() do
+        if v.Character and (instance:IsDescendantOf(v.Character) or instance == v.Character) then
+            return v
+        end
+    end
+end
+local cloneref = cloneref or function(instance)
+    return instance
+end
+local function SafeGetService(service)
+    return cloneref(game:GetService(service))
+end
+function i2p(i,customgen)
+    if customgen then
+        return customgen
+    end
+    local player = getplayer(i)
+    local parent = i
+    local out = ""
+    if parent == nil then
+        return "nil"
+    elseif player then
+        while true do
+            if parent and parent == player.Character then
+                if player == Players.LocalPlayer then
+                    return 'game:GetService("Players").LocalPlayer.Character' .. out
+                else
+                    return i2p(player) .. ".Character" .. out
+                end
+            else
+                if parent.Name:match("[%a_]+[%w+]*") ~= parent.Name then
+                    out = ':FindFirstChild(' .. formatstr(parent.Name) .. ')' .. out
+                else
+                    out = "." .. parent.Name .. out
+                end
+            end
+            task.wait()
+            parent = parent.Parent
+        end
+    elseif parent ~= game then
+        while true do
+            if parent and parent.Parent == game then
+                if SafeGetService(parent.ClassName) then
+                    if lower(parent.ClassName) == "workspace" then
+                        return "workspace"..out
+                    else
+                        return 'game:GetService("' .. parent.ClassName .. '")' .. out
+                    end
+                else
+                    if parent.Name:match("[%a_]+[%w_]*") then
+                        return "game." .. parent.Name .. out
+                    else
+                        return 'game:FindFirstChild(' .. formatstr(parent.Name) .. ')' .. out
+                    end
+                end
+            elseif not parent.Parent then
+                getnilrequired = true
+                return 'getNil(' .. formatstr(parent.Name) .. ', "' .. parent.ClassName .. '")' .. out
+            else
+                if parent.Name:match("[%a_]+[%w_]*") ~= parent.Name then
+                    out = ':WaitForChild(' .. formatstr(parent.Name) .. ')' .. out
+                else
+                    out = ':WaitForChild("' .. parent.Name .. '")'..out
+                end
+            end
+            if i:IsDescendantOf(game.Players.LocalPlayer) then
+                return 'game:GetService("Players").LocalPlayer'..out
+            end
+            parent = parent.Parent
+            task.wait()
+        end
+    else
+        return "game"
+    end
+end
+local OldDebugId = game.GetDebugId
+local GetDebugId = function(obj: Instance): string
+    if threadfuncs then
+        local old = get_thread_identity()
+        set_thread_identity(8)
+        local id = OldDebugId(obj)
+        set_thread_identity(old)
+        return id
+    end
+    return obj
+end
+generation = {
+                [OldDebugId(lp)] = 'game:GetService("Players").LocalPlayer',
+                [OldDebugId(lp:GetMouse())] = 'game:GetService("Players").LocalPlayer:GetMouse',
+                [OldDebugId(game)] = "game",
+                [OldDebugId(workspace)] = "workspace"
+}
+local typeofv2sfunctions = {
+    number = function(v)
+        local number = Safetostring(v)
+        return number_table[number] or number
+    end,
+    boolean = function(v)
+        return Safetostring(v)
+    end,
+    string = function(v,l)
+        return formatstr(v, l)
+    end,
+    ["function"] = function(v)
+        return f2s(v)
+    end,
+    table = function(v, l, p, n, vtv, i, pt, path, tables, tI)
+        return t2s(v, l, p, n, vtv, i, pt, path, tables, tI)
+    end,
+    Instance = function(v)
+        local instance = cloneref(v)
+        return i2p(instance,generation[OldDebugId(instance)])
+    end,
+    userdata = function(v)
+        if configs.advancedinfo then
+            if getrawmetatable(v) then
+                return "newproxy(true)"
+            end
+            return "newproxy(false)"
+        end
+        return "newproxy(true)"
+    end
+}
+local typev2sfunctions = {
+    userdata = function(v,vtypeof)
+        if ufunctions[vtypeof] then
+            return ufunctions[vtypeof](v)
+        end
+        return ("%s(%s) --[[Generation Failure]]"):format(vtypeof,Safetostring(v))
+    end,
+    vector = function(v)
+        return ("Vector3.new(%s)"):format(Safetostring(v))--string.format("Vector3.new(%s, %s, %s)", v2s(v.X), v2s(v.Y), v2s(v.Z))
+    end
+}
+function v2s(v, l, p, n, vtv, i, pt, path, tables, tI)
+    local vtypeof = typeof(v)
+    local vtypeoffunc = typeofv2sfunctions[vtypeof]
+    local vtypefunc = typev2sfunctions[type(v)]
+    local vtype = type(v)
+    if not tI then
+        tI = {0}
+    else
+        tI[1] += 1
+    end
+
+    if vtypeoffunc then
+        return vtypeoffunc(v, l, p, n, vtv, i, pt, path, tables, tI)
+    elseif vtypefunc then
+        return vtypefunc(v,vtypeof)
+    end
+    return ("%s(%s) --[[Generation Failure]]"):format(vtypeof,Safetostring(v))
+end
+function t2s(t, l, p, n, vtv, i, pt, path, tables, tI)
+    local globalIndex = table.find(getgenv(), t) -- checks if table is a global
+    if type(globalIndex) == "string" then
+        return globalIndex
+    end
+    if not tI then
+        tI = {0}
+    end
+    if not path then -- sets path to empty string (so it doesn't have to manually provided every time)
+        path = ""
+    end
+    if not l then -- sets the level to 0 (for indentation) and tables for logging tables it already serialized
+        l = 0
+        tables = {}
+    end
+    if not p then -- p is the previous table but doesn't really matter if it's the first
+        p = t
+    end
+    for _, v in next, tables do -- checks if the current table has been serialized before
+        if n and rawequal(v, t) then
+            bottomstr = bottomstr .. "\n" .. Safetostring(n) .. Safetostring(path) .. " = " .. Safetostring(n) .. Safetostring(({v2p(v, p)})[2])
+            return "{} --[[DUPLICATE]]"
+        end
+    end
+    table.insert(tables, t) -- logs table to past tables
+    local s =  "{" -- start of serialization
+    local size = 0
+    l = l + indent -- set indentation level
+    for k, v in next, t do -- iterates over table
+        size = size + 1 -- changes size for max limit
+        if size > (getgenv().SimpleSpyMaxTableSize or 1000) then
+            s = s .. "\n" .. string.rep(" ", l) .. "-- MAXIMUM TABLE SIZE REACHED, CHANGE 'getgenv().SimpleSpyMaxTableSize' TO ADJUST MAXIMUM SIZE "
+            break
+        end
+        if rawequal(k, t) then -- checks if the table being iterated over is being used as an index within itself (yay, lua)
+            bottomstr = bottomstr .. "\n" .. Safetostring(n) .. Safetostring(path) .. "[" .. Safetostring(n) .. Safetostring(path) .. "]" .. " = " .. (rawequal(v, k) and Safetostring(n) .. Safetostring(path) or v2s(v, l, p, n, vtv, k, t, path .. "[" .. Safetostring(n) .. Safetostring(path) .. "]", tables))
+            size -= 1
+            continue
+        end
+        local currentPath = "" -- initializes the path of 'v' within 't'
+        if type(k) == "string" and k:match("^[%a_]+[%w_]*$") then -- cleanly handles table path generation (for the first half)
+            currentPath = "." .. k
+        else
+            currentPath = "[" .. v2s(k, l, p, n, vtv, k, t, path .. currentPath, tables, tI) .. "]"
+        end
+        if size % 100 == 0 then
+            scheduleWait()
+        end
+        -- actually serializes the member of the table
+        s = s .. "\n" .. string.rep(" ", l) .. "[" .. v2s(k, l, p, n, vtv, k, t, path .. currentPath, tables, tI) .. "] = " .. v2s(v, l, p, n, vtv, k, t, path .. currentPath, tables, tI) .. ","
+    end
+    if #s > 1 then -- removes the last comma because it looks nicer (no way to tell if it's done 'till it's done so...)
+        s = s:sub(1, #s - 1)
+    end
+    if size > 0 then -- cleanly indents the last curly bracket
+        s = s .. "\n" .. string.rep(" ", l - indent)
+    end
+    return s .. "}"
+end
+return function(t)
+    print(t2s(t))
+end
