@@ -353,5 +353,5 @@ function t2s(t, l, p, n, vtv, i, pt, path, tables, tI)
     return s .. "}"
 end
 return function(t)
-    print(t2s(t))
+    return (t2s(t))
 end
