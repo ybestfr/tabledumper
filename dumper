@@ -25,7 +25,7 @@ local create = coroutine.create
 local close = coroutine.close
 local info = debug.info
 local lp = game.Players.LocalPlayer
-
+local configs = {["funcEnabled"] = true}
 local IsA = game.IsA
 local tostring = tostring
 local tonumber = tonumber
@@ -319,6 +319,13 @@ function v2s(v, l, p, n, vtv, i, pt, path, tables, tI)
         return vtypefunc(v,vtypeof)
     end
     return ("%s(%s) --[[Generation Failure]]"):format(vtypeof,Safetostring(v))
+end
+function scheduleWait()
+    local thread = running()
+    schedule(function()
+        resume(thread)
+    end)
+    yield()
 end
 function t2s(t, l, p, n, vtv, i, pt, path, tables, tI)
     local globalIndex = table.find(getgenv(), t) -- checks if table is a global
