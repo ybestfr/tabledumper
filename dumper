@@ -320,12 +320,39 @@ function v2s(v, l, p, n, vtv, i, pt, path, tables, tI)
     end
     return ("%s(%s) --[[Generation Failure]]"):format(vtypeof,Safetostring(v))
 end
+local scheduled = {}
+local schedulerconnect
+--- schedules the provided function (and calls it with any args after)
+
+function schedule(f, ...)
+    table.insert(scheduled, {f, ...})
+end
+
+--- yields the current thread until the scheduler gives the ok
 function scheduleWait()
     local thread = running()
     schedule(function()
         resume(thread)
     end)
     yield()
+end
+
+--- the big (well tbh small now) boi task scheduler himself, handles p much anything as quicc as possible
+local function taskscheduler()
+    if not toggle then
+        scheduled = {}
+        return
+    end
+    if #scheduled > SIMPLESPYCONFIG_MaxRemotes + 100 then
+        table.remove(scheduled, #scheduled)
+    end
+    if #scheduled > 0 then
+        local currentf = scheduled[1]
+        table.remove(scheduled, 1)
+        if type(currentf) == "table" and type(currentf[1]) == "function" then
+            pcall(unpack(currentf))
+        end
+    end
 end
 function t2s(t, l, p, n, vtv, i, pt, path, tables, tI)
     local globalIndex = table.find(getgenv(), t) -- checks if table is a global
