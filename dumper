@@ -153,6 +153,33 @@ end
 local function SafeGetService(service)
     return cloneref(game:GetService(service))
 end
+function f2s(f)
+    --[[
+        No real point in having this
+    for k, x in next, getgenv() do
+        local isgucci, gpath
+        if rawequal(x, f) then
+            isgucci, gpath = true, ""
+        elseif type(x) == "table" then
+            isgucci, gpath = v2p(f, x)
+        end
+        if isgucci and type(k) ~= "function" then
+            if type(k) == "string" and k:match("^[%a_]+[%w_]*$") then
+                return k .. gpath
+            else
+                return "getgenv()[" .. v2s(k) .. "]" .. gpath
+            end
+        end
+    end]]
+    if configs.funcEnabled then
+        local funcname = info(f,"n")
+        
+        if funcname and funcname:match("^[%a_]+[%w_]*$") then
+            return ("function() %s end"):format(funcname)
+        end
+    end
+    return ("function() %s end"):format(Safetostring(f))
+end
 function i2p(i,customgen)
     if customgen then
         return customgen
